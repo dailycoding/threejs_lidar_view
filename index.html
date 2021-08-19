@@ -1,0 +1,172 @@
+
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>Render LiDAR data with Three.js webgl</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				color: #ffffff;
+				background-color: #000000;
+				margin: 0px;
+				overflow: hidden;
+			}
+			#info {
+				position: absolute;
+				top: 0px;
+				width: 100%;
+				padding: 5px;
+				font-family: Monospace;
+				font-size: 13px;
+				text-align: center;
+				font-weight: bold;
+			}
+			a {
+				color: #fff;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div id="container"></div>
+
+		<script src="https://threejs.org/build/three.min.js"></script>
+		
+		<!-- various d3 scripts -->
+		<script src="http://d3js.org/d3.v3.js"></script>
+		<script id="vertexShader" type="x-shader/x-vertex">
+			uniform vec3 center;
+			attribute vec3 customColor;
+
+			varying vec3 vColor;
+
+			void main()	{
+				vColor = customColor;
+				gl_PointSize = 2.;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( position.xyz - center.xyz, 1.0 );
+			}
+		</script>
+		<script id="fragmentShader" type="x-shader/x-fragment">
+			varying vec3 vColor;
+			void main()	{
+				gl_FragColor = vec4(vColor, 1);
+			}
+		</script>
+
+		<!-- loading the data for single frame of lidar -->
+		<script>
+		d3.csv("cloud2.csv", function(error, data) {
+			if (error) throw error;
+			// and calls "rest" function to start rest of page 
+			rest(data)
+		});
+
+		// the bulk of the three.js code and data visualization happens in here
+		function rest(data){
+			var renderer, scene, camera;
+			var points, uniforms, geometry;
+			var particles = data.length;
+			// console message to check number of particles being rendered
+			console.log("particles length = ",particles)
+			var WIDTH = window.innerWidth;
+			var HEIGHT = window.innerHeight;
+			init();
+			animate();
+			// this function sets the initial state of the scene
+			function init() {
+				// Load geometry from data first
+				const geometry = new THREE.BufferGeometry();
+
+				const positions = new Float32Array( particles * 3 );
+				const colors = new Float32Array( particles * 3 );
+				const sizes = new Float32Array( particles );
+
+				for ( let i = 0, i3 = 0; i < particles; i ++, i3 += 3 ) {
+					// positions
+					positions[ i3 + 0 ] = parseFloat(data[i]["X"]);
+					positions[ i3 + 1 ] = parseFloat(data[i]["Y"]);
+					positions[ i3 + 2 ] = parseFloat(data[i]["Z"]);
+
+					// colors
+					colors[ i3 + 0 ] = parseFloat(data[i]["R"]) / 65535;
+					colors[ i3 + 1 ] = parseFloat(data[i]["G"]) / 65535;
+					colors[ i3 + 2 ] = parseFloat(data[i]["B"]) / 65535;
+
+					sizes[ i ] = 50;
+				}
+
+				geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( positions, 3 ) );
+				geometry.setAttribute( 'customColor', new THREE.Float32BufferAttribute( colors, 3 ) );
+
+				geometry.computeBoundingSphere();
+				let boundingCenter = geometry.boundingSphere.center;
+				let boundingRadius = geometry.boundingSphere.radius;
+
+				// Set camera
+				camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight,
+																										boundingRadius / 5, boundingRadius * 5 );
+				camera.position.set(boundingRadius * 1.5, boundingRadius * 1.5, boundingRadius * 1.5);
+				camera.lookAt(0, 0, 0);
+
+				// Add mesh to scene
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x050505 );
+
+				const material = new THREE.ShaderMaterial( {
+					uniforms: {
+						center: { value: boundingCenter }
+					},
+					vertexColors: true,
+					vertexShader: document.getElementById( 'vertexShader' ).textContent,
+					fragmentShader: document.getElementById( 'fragmentShader' ).textContent,
+				} );
+
+				points = new THREE.Points( geometry, material );
+				scene.add( points );
+
+				// Add Renderer
+				renderer = new THREE.WebGLRenderer();
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+				container = document.getElementById( 'container' );
+				container.appendChild( renderer.domElement );
+
+				// Add event handlers
+				window.addEventListener( 'resize', onWindowResize );
+				document.addEventListener( 'mousewheel', onDocumentMouseWheel, false );
+
+			}
+
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+			}
+
+			function onDocumentMouseWheel( event ) {
+				let steps = event.wheelDeltaY / 120;
+				let delta = Math.pow(1.05, steps);
+				camera.position.set(camera.position.x * delta, camera.position.y * delta, camera.position.z * delta);
+			}
+
+			function animate() {
+				requestAnimationFrame( animate );
+				render();
+			}
+
+			function render() {
+				const time = Date.now() * 0.001;
+
+				points.rotation.x = time * 0.25;
+				points.rotation.y = time * 0.5;
+
+				renderer.render( scene, camera );
+			}
+		}
+	</script>
+
+</body>
+</html>
